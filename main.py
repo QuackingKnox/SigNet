@@ -31,6 +31,7 @@ def preprocess_signature(path, img_size=(170, 242)):
     img = tf.image.decode_jpeg(img, channels=1)
     img = tf.image.resize(img, img_size, method=tf.image.ResizeMethod.BILINEAR)
     img = 1 - img / 255.0
+    # augmentation x-flip, rotate, probably Guassian noise
     return img
 
 def process_path(img1_path, img2_path, label):
