@@ -26,22 +26,31 @@ df['img1_path'] = df['img1'].apply(lambda x: folder_path + '/' + x)
 df['img2_path'] = df['img2'].apply(lambda x: folder_path + '/' + x)
 df['label'] = df['label'].apply(lambda x: 0 if x == 1 else 1)
 
-def preprocess_signature(path, img_size=(170, 242)):
+def augment_signature(img, seed):
+    img = tf.image.random_flip_left_right(img, seed=seed)
+    img = tf.image.random_flip_up_down(img, seed=seed)
+    img = tf.image.random_brightness(img, max_delta=0.2, seed=seed)
+    img = tf.image.random_contrast(img, lower=0.8, upper=1.2, seed=seed)
+    return img
+
+def preprocess_signature(path, img_size=(170, 242), augment=False, seed=None):
     img = tf.io.read_file(path)
     img = tf.image.decode_jpeg(img, channels=1)
     img = tf.image.resize(img, img_size, method=tf.image.ResizeMethod.BILINEAR)
     img = 1 - img / 255.0
-    # augmentation x-flip, rotate, probably Guassian noise
+    if augment and seed is not None:
+        img = augment_signature(img, seed)
     return img
 
-def process_path(img1_path, img2_path, label):
-    img1 = preprocess_signature(img1_path)
-    img2 = preprocess_signature(img2_path)
+def process_path(img1_path, img2_path, label, augment=False):
+    seed = randint(0, 100000)
+    img1 = preprocess_signature(img1_path, augment=augment, seed=seed)
+    img2 = preprocess_signature(img2_path, augment=augment, seed=seed)
     return (img1, img2), label
 
-def create_tf_dataset(data, batch_size):
+def create_tf_dataset(data, batch_size, augment=False):
     dataset = tf.data.Dataset.from_tensor_slices((data['img1_path'], data['img2_path'], data['label']))
-    dataset = dataset.map(process_path, num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.map(lambda img1_path, img2_path, label: process_path(img1_path, img2_path, label, augment=augment), num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.shuffle(buffer_size=batch_size*4, reshuffle_each_iteration=True, seed=SEED).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
     return dataset
 
