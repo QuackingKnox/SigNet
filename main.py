@@ -137,9 +137,9 @@ test_df, val_df = train_test_split(test_val_df, test_size=0.4, random_state=SEED
 
 batch_size = 128
 
-train_dataset = create_tf_dataset(train_df, batch_size=batch_size)
-test_dataset = create_tf_dataset(test_df, batch_size=batch_size)
-val_dataset = create_tf_dataset(val_df, batch_size=batch_size)
+train_dataset = create_tf_dataset(train_df, batch_size=batch_size, augment=True)
+test_dataset = create_tf_dataset(test_df, batch_size=batch_size, augment=True)
+val_dataset = create_tf_dataset(val_df, batch_size=batch_size, augment=False)
 
 
 rms = tf.keras.optimizers.RMSprop(learning_rate=1e-4, rho=0.9, epsilon=1e-08)
@@ -148,7 +148,7 @@ siamese_net.compile(loss=contrastive_loss, optimizer=rms)
 callbacks = [
     tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, verbose=1),
     tf.keras.callbacks.ReduceLROnPlateau(factor=0.1, patience=5, min_lr=0.000001, verbose=1),
-    tf.keras.callbacks.ModelCheckpoint('/content/signet-{epoch:03d}.h5', verbose=1, save_weights_only=True)
+    tf.keras.callbacks.ModelCheckpoint('/content/signet-{epoch:03d}.h5', verbose=0, save_weights_only=True)
 ]
 
 history = siamese_net.fit(train_dataset,
