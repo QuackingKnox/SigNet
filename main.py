@@ -2,6 +2,8 @@ import pandas as pd
 import os
 import shutil
 from itertools import product
+from PIL import Image, ImageEnhance, ImageOps
+import random
 
 import tensorflow as tf
 from keras.models import Sequential
@@ -26,26 +28,81 @@ df['img1_path'] = df['img1'].apply(lambda x: folder_path + '/' + x)
 df['img2_path'] = df['img2'].apply(lambda x: folder_path + '/' + x)
 df['label'] = df['label'].apply(lambda x: 0 if x == 1 else 1)
 
-def augment_signature(img, seed):
-    img = tf.image.random_flip_left_right(img, seed=seed)
-    img = tf.image.random_flip_up_down(img, seed=seed)
-    img = tf.image.random_brightness(img, max_delta=0.2, seed=seed)
-    img = tf.image.random_contrast(img, lower=0.8, upper=1.2, seed=seed)
-    return img
+def augment_signature(img1, img2, img_size):
+    # Convert the image tensors to PIL images
+    img1_pil = tf.keras.preprocessing.image.array_to_img(img1)
+    img2_pil = tf.keras.preprocessing.image.array_to_img(img2)
 
-def preprocess_signature(path, img_size=(170, 242), augment=False, seed=None):
-    img = tf.io.read_file(path)
-    img = tf.image.decode_jpeg(img, channels=1)
-    img = tf.image.resize(img, img_size, method=tf.image.ResizeMethod.BILINEAR)
-    img = 1 - img / 255.0
+    # Calculate random brightness and contrast values
+    brightness_factor = random.uniform(0.8, 1.2)
+    contrast_factor = random.uniform(0.8, 1.2)
+
+    # Apply the same brightness and contrast transformations to both images
+    enhancer1 = ImageEnhance.Brightness(img1_pil)
+    img1_pil = enhancer1.enhance(brightness_factor)
+    enhancer2 = ImageEnhance.Brightness(img2_pil)
+    img2_pil = enhancer2.enhance(brightness_factor)
+
+    enhancer1 = ImageEnhance.Contrast(img1_pil)
+    img1_pil = enhancer1.enhance(contrast_factor)
+    enhancer2 = ImageEnhance.Contrast(img2_pil)
+    img2_pil = enhancer2.enhance(contrast_factor)
+
+    # Scaling
+    img1_pil = img1_pil.resize((img_size[1], img_size[0]), resample=Image.BILINEAR)
+    img2_pil = img2_pil.resize((img_size[1], img_size[0]), resample=Image.BILINEAR)
+
+    # Offset
+    offset_height, offset_width = int(img1_pil.height // 10), int(img1_pil.width // 10)
+    img1_pil = ImageOps.expand(img1_pil, border=(offset_width, offset_height))
+    img2_pil = ImageOps.expand(img2_pil, border=(offset_width, offset_height))
+
+    # Tilting
+    angle = random.uniform(-30, 30)
+    img1_pil = img1_pil.rotate(angle)
+    img2_pil = img2_pil.rotate(angle)
+
+    # Convert the PIL images back to tensors
+    img1 = tf.keras.preprocessing.image.img_to_array(img1_pil) / 255.0
+    img2 = tf.keras.preprocessing.image.img_to_array(img2_pil) / 255.0
+
+    # Resize the augmented images back to the desired shape
+    img1 = tf.image.resize(img1, img_size, method=tf.image.ResizeMethod.BILINEAR)
+    img2 = tf.image.resize(img2, img_size, method=tf.image.ResizeMethod.BILINEAR)
+
+    return img1, img2
+
+def augment_signature_wrapper(img1, img2, img_size):
+    img1_aug, img2_aug = tf.py_function(augment_signature, [img1, img2, img_size], [tf.float32, tf.float32])
+    img1_aug.set_shape(img1.shape)
+    img2_aug.set_shape(img2.shape)
+    return img1_aug, img2_aug
+
+def preprocess_signature(path1, path2, img_size=(170, 242), augment=False, seed=None):
+    img1 = tf.io.read_file(path1)
+    img1 = tf.image.decode_jpeg(img1, channels=1)
+    img1 = tf.image.resize(img1, img_size, method=tf.image.ResizeMethod.BILINEAR)
+    img1 = 1 - img1 / 255.0
+
+    img2 = tf.io.read_file(path2)
+    img2 = tf.image.decode_jpeg(img2, channels=1)
+    img2 = tf.image.resize(img2, img_size, method=tf.image.ResizeMethod.BILINEAR)
+    img2 = 1 - img2 / 255.0
+
     if augment and seed is not None:
-        img = augment_signature(img, seed)
-    return img
+        random.seed(seed)
+        try:
+            img1, img2 = augment_signature_wrapper(img1, img2, img_size)
+        except:
+            print("CAUGHT EXCEPTION IN AUGMENTATION")
+        
+        return img1, img2
+
+    return img1, img2
 
 def process_path(img1_path, img2_path, label, augment=False):
-    seed = randint(0, 100000)
-    img1 = preprocess_signature(img1_path, augment=augment, seed=seed)
-    img2 = preprocess_signature(img2_path, augment=augment, seed=seed)
+    seed = random.randint(0, 100000)
+    img1, img2 = preprocess_signature(img1_path, img2_path, augment=augment, seed=seed)
     return (img1, img2), label
 
 def create_tf_dataset(data, batch_size, augment=False):
